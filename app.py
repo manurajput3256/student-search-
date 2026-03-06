@@ -1,92 +1,203 @@
+import os
 import pandas as pd
-from flask import Flask, request, render_template_string
+from flask import Flask, request, render_template_string, redirect, session
 from rapidfuzz import process
 
-# load excel file
-EXCEL_PATH = "students.xlsx"
-df = pd.read_excel(EXCEL_PATH)
+# ================= APP =================
+app = Flask(__name__)
+app.secret_key = "super_secret_key_2026"
+
+# ================= LOGIN =================
+USERNAME = "admin"
+PASSWORD = "12345"
+
+# ================= LOAD DATABASE =================
+DATA_FILE = "students.xlsx"
+
+df = pd.read_excel(DATA_FILE)
 
 df["name_lower"] = df["Name"].astype(str).str.lower()
 df["roll_str"] = df["Roll No"].astype(str)
 df["mobile_str"] = df["Mobile"].astype(str)
 
-app = Flask(__name__)
-
-HTML_PAGE = """
+# ================= LOGIN PAGE =================
+LOGIN_PAGE = """
+<!DOCTYPE html>
 <html>
 <head>
-<title>Student Information System</title>
-
-<script>
-function speakText(text){
-var speech = new SpeechSynthesisUtterance(text);
-window.speechSynthesis.speak(speech);
-}
-
-function stopSpeech(){
-window.speechSynthesis.cancel();
-}
-</script>
-
+<title>Login</title>
+<style>
+body{font-family:Arial;background:#f2f2f2;text-align:center}
+.box{background:white;padding:30px;width:300px;margin:auto;margin-top:120px;border-radius:10px}
+input{padding:8px;width:90%;margin:5px}
+button{padding:10px;width:95%}
+</style>
 </head>
 
 <body>
 
-<h2>Student Information System</h2>
+<div class="box">
+
+<h2>Login</h2>
 
 <form method="post">
-<input type="text" name="query" placeholder="Enter Name / Roll / Mobile">
-<button type="submit">Search</button>
+
+<input type="text" name="username" placeholder="Username" required><br>
+
+<input type="password" name="password" placeholder="Password" required><br>
+
+<button type="submit">Login</button>
+
 </form>
 
-{% if student %}
-
-<table border="1">
-{% for key,value in student.items() %}
-<tr>
-<td>{{key}}</td>
-<td>{{value}}</td>
-</tr>
-{% endfor %}
-</table>
-
-<button onclick="speakText(`{{speech_text}}`)">Speak</button>
-<button onclick="stopSpeech()">Stop</button>
-
-{% endif %}
+</div>
 
 </body>
 </html>
 """
 
-@app.route("/",methods=["GET","POST"])
+# ================= MAIN PAGE =================
+HTML_PAGE = """
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<title>Student Information System</title>
+
+<style>
+
+body{font-family:Arial;background:#f2f2f2}
+
+.container{
+background:white;
+width:80%;
+margin:auto;
+margin-top:40px;
+padding:20px;
+border-radius:10px
+}
+
+input{
+padding:10px;
+width:60%
+}
+
+button{
+padding:10px
+}
+
+table{
+border-collapse:collapse;
+width:100%;
+margin-top:20px
+}
+
+td,th{
+border:1px solid black;
+padding:8px
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>Student Information System</h2>
+
+<form method="post">
+
+<input type="text" name="query" placeholder="Enter Name / Roll / Mobile" required>
+
+<button type="submit">Search</button>
+
+</form>
+
+{% if student %}
+
+<table>
+
+<tr><th>Field</th><th>Value</th></tr>
+
+{% for key,value in student.items() %}
+
+<tr>
+
+<td>{{key}}</td>
+
+<td>{{value}}</td>
+
+</tr>
+
+{% endfor %}
+
+</table>
+
+{% endif %}
+
+<br>
+
+<a href="/logout">Logout</a>
+
+</div>
+
+</body>
+
+</html>
+"""
+
+# ================= LOGIN ROUTE =================
+@app.route("/login", methods=["GET","POST"])
+def login():
+
+    if request.method == "POST":
+
+        username = request.form["username"]
+        password = request.form["password"]
+
+        if username == USERNAME and password == PASSWORD:
+
+            session["user"] = username
+            return redirect("/")
+
+    return render_template_string(LOGIN_PAGE)
+
+# ================= HOME =================
+@app.route("/", methods=["GET","POST"])
 def home():
 
+    if "user" not in session:
+        return redirect("/login")
+
     student=None
-    speech_text=""
 
-    if request.method=="POST":
+    if request.method == "POST":
 
-        query=request.form["query"].lower()
+        query = request.form["query"].lower()
 
-        roll_match=df[df["roll_str"]==query]
-        mobile_match=df[df["mobile_str"]==query]
+        # search name
+        match = process.extractOne(query, df["name_lower"])
 
-        if not roll_match.empty:
-            row=roll_match.iloc[0]
+        if match:
 
-        elif not mobile_match.empty:
-            row=mobile_match.iloc[0]
+            row = df[df["name_lower"] == match[0]].iloc[0]
+            student = row.to_dict()
 
-        else:
-            match=process.extractOne(query,df["name_lower"])
-            row=df[df["name_lower"]==match[0]].iloc[0]
+    return render_template_string(HTML_PAGE, student=student)
 
-        student=row.to_dict()
+# ================= LOGOUT =================
+@app.route("/logout")
+def logout():
 
-        speech_text=f"{row['Name']} is a student of {row['Branch']} branch."
+    session.clear()
+    return redirect("/login")
 
-    return render_template_string(HTML_PAGE,student=student,speech_text=speech_text)
+# ================= RUN SERVER =================
+if __name__ == "__main__":
 
-if __name__=="__main__":
-    app.run()
+    port = int(os.environ.get("PORT", 10000))
+
+    app.run(host="0.0.0.0", port=port)
